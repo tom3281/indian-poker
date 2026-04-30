@@ -207,7 +207,10 @@ export class GameRoom {
         if (p.card.v < lowV) lowV = p.card.v;
       }
       const winners = fighters.filter(([, p]) => p.card.v === topV).map(([id]) => id);
-      const losers = fighters.filter(([, p]) => p.card.v === lowV).map(([id]) => id);
+      // Only one fighter = solo, no opponent to lose to
+      const losers = fightCount > 1
+        ? fighters.filter(([, p]) => p.card.v === lowV).map(([id]) => id)
+        : [];
       const loserSet = new Set(losers);
       const drinks = {};
       for (const [id, p] of fighters) {
