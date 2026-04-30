@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1730">
+<title>INDIAN POKER</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+    background: radial-gradient(ellipse at center, #1a233d 0%, #0a0f1e 70%, #050811 100%);
+    color: #fff;
+    overflow-x: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+  .app { min-height: 100dvh; display: flex; flex-direction: column; padding: 20px; max-width: 720px; margin: 0 auto; width: 100%; }
+
+  /* Screens */
+  .screen { display: none; flex: 1; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* Title */
+  .title { text-align: center; padding: 32px 20px 24px; }
+  .title h1 {
+    font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+    font-size: clamp(36px, 11vw, 64px);
+    margin: 0; letter-spacing: -0.05em; font-weight: 900;
+    background: linear-gradient(180deg, #ffd76e 0%, #c69234 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .title .subtitle { font-size: 11px; letter-spacing: 6px; color: rgba(255,255,255,0.55); margin-top: 4px; }
+
+  /* Inputs */
+  .panel {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,215,110,0.2);
+    border-radius: 16px;
+    padding: 20px; margin-bottom: 14px;
+    backdrop-filter: blur(8px);
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 13px; letter-spacing: 3px; color: #ffd76e; font-weight: 600; }
+  .panel input {
+    width: 100%;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: #fff; font-size: 16px; outline: none;
+    transition: all .2s;
+  }
+  .panel input:focus { border-color: #ffd76e; background: rgba(255,255,255,0.12); }
+  .panel input + input { margin-top: 8px; }
+
+  /* Buttons */
+  .btn {
+    width: 100%;
+    border: none; border-radius: 14px;
+    padding: 16px;
+    font-size: 16px; font-weight: 700; letter-spacing: 4px;
+    cursor: pointer; transition: transform .1s;
+  }
+  .btn:active { transform: translateY(2px); }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary {
+    background: linear-gradient(180deg, #ffd76e 0%, #c69234 100%);
+    color: #1a0f00;
+    box-shadow: 0 6px 18px rgba(198,146,52,0.4);
+  }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    letter-spacing: 2px;
+  }
+  .btn + .btn { margin-top: 10px; }
+  .btn-row { display: flex; gap: 10px; }
+  .btn-row .btn { flex: 1; }
+
+  /* ---------- Player list ---------- */
+  .room-info {
+    text-align: center; margin: 12px 0 20px;
+    font-size: 11px; letter-spacing: 4px; color: rgba(255,255,255,0.55);
+  }
+  .room-code {
+    display: inline-block; margin-top: 4px;
+    font-family: 'Inter', system-ui, monospace;
+    font-size: 32px; font-weight: 900; letter-spacing: 6px;
+    color: #ffd76e;
+  }
+  .player-list { display: flex; flex-direction: column; gap: 8px; }
+  .player-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    transition: all .25s;
+  }
+  .player-row.you { background: rgba(255,215,110,0.12); border-color: rgba(255,215,110,0.4); }
+  .player-row .name { font-weight: 700; }
+  .player-row .badge {
+    font-size: 10px; padding: 3px 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.12); letter-spacing: 1px;
+  }
+  .player-row.host .badge { background: rgba(255,215,110,0.3); color: #ffd76e; }
+  .player-row.decided { background: rgba(80,255,150,0.1); border-color: rgba(80,255,150,0.3); }
+
+  /* ---------- Countdown screen ---------- */
+  .countdown-screen { align-items: center; justify-content: center; text-align: center; }
+  .countdown-instruction {
+    font-size: 18px; line-height: 1.6;
+    color: rgba(255,255,255,0.85); margin-bottom: 32px;
+    letter-spacing: 1px;
+  }
+  .countdown-instruction strong { color: #ffd76e; font-size: 22px; display: block; margin-bottom: 8px; }
+  .countdown-number {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: clamp(120px, 30vw, 200px);
+    font-weight: 900;
+    line-height: 1;
+    background: linear-gradient(180deg, #ffd76e, #c69234);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 60px rgba(255,215,110,0.4);
+    letter-spacing: -0.05em;
+  }
+
+  /* ---------- Observation screen (shows YOUR card big) ---------- */
+  .observation-screen { align-items: center; justify-content: center; text-align: center; padding: 12px; }
+  .observation-hint {
+    font-size: 13px; letter-spacing: 3px; color: rgba(255,255,255,0.55);
+    margin-bottom: 12px;
+  }
+  .big-card-wrap {
+    width: 92%; max-width: 420px; aspect-ratio: 5 / 7;
+    perspective: 800px;
+    margin: 0 auto;
+  }
+  .observation-timer {
+    margin-top: 18px;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 22px; font-weight: 800; letter-spacing: 2px;
+    color: #ffd76e;
+  }
+
+  /* ---------- Decision screen ---------- */
+  .decision-screen { align-items: center; justify-content: center; text-align: center; padding: 24px; }
+  .decision-msg {
+    font-size: 18px; line-height: 1.6; margin-bottom: 30px;
+    color: rgba(255,255,255,0.85);
+  }
+  .decision-msg strong { color: #ffd76e; }
+  .decision-buttons { display: flex; gap: 16px; width: 100%; max-width: 380px; }
+  .decision-buttons button {
+    flex: 1;
+    padding: 28px 16px;
+    font-size: 20px; font-weight: 900; letter-spacing: 3px;
+    border: none; border-radius: 16px;
+    cursor: pointer; transition: transform .1s;
+  }
+  .decision-buttons button:active { transform: scale(0.96); }
+  .btn-fight {
+    background: linear-gradient(180deg, #ff5050 0%, #c41e1e 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(196,30,30,0.5);
+  }
+  .btn-fold {
+    background: linear-gradient(180deg, #6f6f7a 0%, #404048 100%);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  .decision-status {
+    margin-top: 28px;
+    font-size: 12px; color: rgba(255,255,255,0.55); letter-spacing: 2px;
+  }
+  .decision-locked {
+    font-size: 22px; color: #ffd76e; font-weight: 700; letter-spacing: 4px;
+    margin-bottom: 8px;
+  }
+
+  /* ---------- Reveal screen ---------- */
+  .reveal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 4px 0 16px; }
+  .reveal-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    transition: all .3s;
+  }
+  .reveal-card.winner {
+    background: rgba(255,215,110,0.18);
+    border-color: #ffd76e;
+    box-shadow: 0 0 16px rgba(255,215,110,0.3);
+  }
+  .reveal-card.loser { background: rgba(255,80,80,0.12); border-color: rgba(255,80,80,0.45); }
+  .reveal-card .pname { font-size: 13px; font-weight: 700; }
+  .reveal-card .pname.you { color: #ffd76e; }
+  .reveal-card .pcard-wrap { width: 70px; aspect-ratio: 5 / 7; }
+  .reveal-card .pdecision {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    background: rgba(255,255,255,0.1); letter-spacing: 1px;
+  }
+  .reveal-card .pdecision.fight { background: rgba(255,80,80,0.3); color: #ffb0b0; }
+  .reveal-card .pdecision.fold { background: rgba(150,150,150,0.25); color: rgba(255,255,255,0.7); }
+  .reveal-card .pdrinks {
+    font-size: 12px; color: rgba(255,255,255,0.7);
+  }
+  .reveal-card .pdrinks.heavy { color: #ff8a8a; font-weight: 700; }
+  .verdict-banner {
+    text-align: center; padding: 14px;
+    background: linear-gradient(90deg, transparent, rgba(255,215,110,0.15), transparent);
+    border-top: 1px solid rgba(255,215,110,0.3);
+    border-bottom: 1px solid rgba(255,215,110,0.3);
+    margin: 0 -20px 14px;
+  }
+  .verdict-banner .label { font-size: 10px; letter-spacing: 4px; color: rgba(255,255,255,0.6); }
+  .verdict-banner .winner-name {
+    font-size: 22px; font-weight: 900; color: #ffd76e; margin-top: 2px; letter-spacing: 2px;
+  }
+
+  /* ---------- Card design (reused from flip) ---------- */
+  .card {
+    position: relative; width: 100%; height: 100%;
+    transform-style: preserve-3d;
+    transition: transform .8s cubic-bezier(.4,1.4,.55,1);
+    will-change: transform;
+  }
+  .card.flipped { transform: rotateY(180deg); }
+  .card.deal-in { animation: dealIn .5s cubic-bezier(.3,1.3,.5,1); }
+  @keyframes dealIn {
+    from { transform: scale(0.7) rotateZ(-8deg); opacity: 0; }
+    to   { transform: scale(1) rotateZ(0); opacity: 1; }
+  }
+  .card-face {
+    position: absolute; inset: 0;
+    border-radius: 10px;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    overflow: hidden;
+    box-shadow: 0 14px 32px rgba(0,0,0,0.6), 0 4px 10px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.55);
+  }
+  .card-back {
+    background:
+      radial-gradient(circle at 50% 35%, rgba(255,200,200,0.18), transparent 60%),
+      linear-gradient(135deg, #a0182a 0%, #6b0d18 55%, #3d0610 100%);
+    border: 4px solid #fdfaf0;
+  }
+  .card-back::before {
+    content: ""; position: absolute; inset: 4px;
+    border: 1px solid rgba(255,215,110,0.55);
+    border-radius: 5px;
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,215,110,0.08) 6px 7px),
+      repeating-linear-gradient(-45deg, transparent 0 6px, rgba(255,215,110,0.08) 6px 7px);
+  }
+  .card-front {
+    background: linear-gradient(180deg, #fefdf6 0%, #f6efd9 100%);
+    transform: rotateY(180deg);
+    color: #0a0a0a;
+  }
+  .card-front::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 18% 14%, rgba(255,255,255,0.5) 0%, transparent 55%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.07);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  .card-front.red   { color: #d61e2e; }
+  .card-front.black { color: #0a0a0a; }
+  .corner {
+    position: absolute;
+    display: flex; flex-direction: column; align-items: center;
+    line-height: 0.82;
+    font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+    font-weight: 800; letter-spacing: -0.05em;
+  }
+  .corner.tl { top: 5%; left: 7%; }
+  .corner.br { bottom: 5%; right: 7%; transform: rotate(180deg); }
+  .corner .rank { line-height: 0.82; }
+  .corner .suit-mini { line-height: 1; margin-top: 0.04em; opacity: 0.95; }
+
+  .center-pips {
+    position: absolute; inset: 22% 24%;
+    pointer-events: none;
+  }
+  .center-pips .pip { position: absolute; line-height: 1; color: inherit; }
+  .center-ace {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .center-face {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: 'Georgia', serif; font-weight: 900;
+    letter-spacing: -0.04em; line-height: 1;
+  }
+  .face-letter { line-height: 0.88; }
+  .face-suit { font-size: 0.42em; line-height: 1; opacity: 0.88; margin-top: 0.08em; }
+
+  /* Big card sizing (observation phase — needs to be readable from across a table) */
+  .big-card-wrap .corner .rank { font-size: 56px; }
+  .big-card-wrap .corner .suit-mini { font-size: 48px; }
+  .big-card-wrap .pip { font-size: 50px; }
+  .big-card-wrap .center-ace { font-size: 220px; }
+  .big-card-wrap .center-face { font-size: 160px; }
+
+  /* Small (reveal) card sizing */
+  .reveal-card .pcard-wrap { width: 88px; }
+  .reveal-card .pcard-wrap .corner .rank { font-size: 16px; }
+  .reveal-card .pcard-wrap .corner .suit-mini { font-size: 13px; }
+  .reveal-card .pcard-wrap .pip { font-size: 13px; }
+  .reveal-card .pcard-wrap .center-ace { font-size: 46px; }
+  .reveal-card .pcard-wrap .center-face { font-size: 34px; }
+
+  /* Status text */
+  .status-line {
+    text-align: center; margin: 8px 0 16px;
+    font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.55);
+  }
+  .footer-actions { margin-top: auto; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,80,80,0.95); color: #fff;
+    padding: 12px 20px; border-radius: 10px;
+    font-size: 14px; z-index: 1000;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== ENTER ===== -->
+  <div class="screen active" id="enterScreen">
+    <div class="title">
+      <h1>INDIAN</h1>
+      <div class="subtitle">POKER · DRINKING GAME</div>
+    </div>
+    <div class="panel">
+      <h2>あなたの名前</h2>
+      <input id="nameInput" type="text" placeholder="プレイヤー名" maxlength="12" autocomplete="off">
+    </div>
+    <div class="panel">
+      <h2>ルームコード</h2>
+      <input id="roomInput" type="text" placeholder="既存ルームのコードを入力（空なら新規作成）" maxlength="6" autocomplete="off" value="KK2022" style="text-transform:uppercase;letter-spacing:2px;">
+    </div>
+    <button class="btn btn-primary" id="enterBtn">JOIN</button>
+  </div>
+
+  <!-- ===== LOBBY ===== -->
+  <div class="screen" id="lobbyScreen">
+    <div class="room-info">
+      ROOM CODE
+      <div class="room-code" id="roomCodeDisplay">------</div>
+    </div>
+    <div class="panel">
+      <h2>プレイヤー <span id="playerCountLabel" style="opacity:.7"></span></h2>
+      <div class="player-list" id="lobbyPlayerList"></div>
+    </div>
+    <div class="status-line" id="lobbyStatus"></div>
+    <div class="footer-actions">
+      <button class="btn btn-primary" id="startBtn" style="display:none">START</button>
+      <button class="btn btn-ghost" id="leaveBtn">退出</button>
+    </div>
+  </div>
+
+  <!-- ===== COUNTDOWN ===== -->
+  <div class="screen countdown-screen" id="countdownScreen">
+    <div class="countdown-instruction">
+      <strong>スマホを額に当ててください</strong>
+      画面を外側に向けて、自分のカードが見えないように
+    </div>
+    <div class="countdown-number" id="countdownNumber">10</div>
+  </div>
+
+  <!-- ===== OBSERVATION ===== -->
+  <div class="screen observation-screen" id="observationScreen">
+    <div class="observation-hint">他の人のカードを覚えてください</div>
+    <div class="big-card-wrap" id="bigCardWrap"></div>
+    <div class="observation-timer" id="observationTimer">60</div>
+  </div>
+
+  <!-- ===== DECISION ===== -->
+  <div class="screen decision-screen" id="decisionScreen">
+    <div class="decision-msg" id="decisionMsg">
+      <strong>勝負 or フォールド</strong><br>
+      自分のカードは隠しました。スマホを下ろして決断を
+    </div>
+    <div class="decision-buttons" id="decisionButtons">
+      <button class="btn-fight" data-choice="fight">勝負</button>
+      <button class="btn-fold" data-choice="fold">フォールド</button>
+    </div>
+    <div class="decision-locked" id="decisionLocked" style="display:none">DECIDED</div>
+    <div class="decision-status" id="decisionStatus"></div>
+  </div>
+
+  <!-- ===== REVEAL ===== -->
+  <div class="screen" id="revealScreen">
+    <div class="verdict-banner">
+      <div class="label">WINNER</div>
+      <div class="winner-name" id="winnerName">-</div>
+    </div>
+    <div class="reveal-grid" id="revealGrid"></div>
+    <div class="footer-actions">
+      <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT ROUND</button>
+      <button class="btn btn-ghost" id="leaveBtn2">退出</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+// ===== State =====
+const PHASES = {
+  LOBBY: "lobby", COUNTDOWN: "countdown", OBSERVATION: "observation",
+  DECISION: "decision", REVEAL: "reveal",
+};
+const STORAGE_KEY = "indian_v1";
+let ws = null;
+let serverState = null;
+let myInfo = { name: "", room: "" };
+let timerInterval = null;
+
+// Pre-fill name: saved name first, otherwise random funny default
+const FUNNY_NAMES = [
+  "酒豪", "ザル", "ベロベロ", "ほろ酔い", "下戸", "二日酔い", "顔面紅葉", "記憶喪失",
+  "翌日後悔", "終電マン", "ウーロン茶", "一気のヌシ", "顔面真っ赤", "介錯人", "ノンアル王", "酔拳",
+];
+function randomFunnyName() {
+  return FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)];
+}
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+  document.getElementById("nameInput").value = saved.name || randomFunnyName();
+} catch {
+  document.getElementById("nameInput").value = randomFunnyName();
+}
+
+// ===== DOM helpers =====
+function $(id) { return document.getElementById(id); }
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(el => el.classList.remove("active"));
+  $(name + "Screen").classList.add("active");
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+function showToast(msg, ms = 2500) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), ms);
+}
+
+// ===== Card rendering =====
+const PIP_LAYOUTS = {
+  "2":  [[10,50],[90,50]],
+  "3":  [[10,50],[50,50],[90,50]],
+  "4":  [[10,30],[10,70],[90,30],[90,70]],
+  "5":  [[10,30],[10,70],[50,50],[90,30],[90,70]],
+  "6":  [[10,30],[10,70],[50,30],[50,70],[90,30],[90,70]],
+  "7":  [[10,30],[10,70],[30,50],[50,30],[50,70],[90,30],[90,70]],
+  "8":  [[10,30],[10,70],[30,50],[50,30],[50,70],[70,50],[90,30],[90,70]],
+  "9":  [[10,30],[10,70],[35,30],[35,70],[50,50],[65,30],[65,70],[90,30],[90,70]],
+  "10": [[10,30],[10,70],[30,30],[30,70],[50,30],[50,70],[70,30],[70,70],[90,30],[90,70]],
+};
+function centerHTML(card) {
+  const r = card.label, s = card.suit.sym;
+  if (r === "A") return `<div class="center-ace">${s}</div>`;
+  if (["J","Q","K"].includes(r)) {
+    return `<div class="center-face"><span class="face-letter">${r}</span><span class="face-suit">${s}</span></div>`;
+  }
+  const layout = PIP_LAYOUTS[r] || [];
+  return `<div class="center-pips">${layout.map(([y, x]) => {
+    const rot = y > 50 ? " rotate(180deg)" : "";
+    return `<span class="pip" style="top:${y}%;left:${x}%;transform:translate(-50%,-50%)${rot}">${s}</span>`;
+  }).join("")}</div>`;
+}
+function cardHTML(card, options = {}) {
+  if (!card) {
+    return `<div class="card ${options.flipped ? "" : "flipped"}">
+      <div class="card-face card-back"></div>
+      <div class="card-face card-front"></div>
+    </div>`;
+  }
+  const colorClass = card.suit.color;
+  const flipped = options.flipped !== false; // default flipped=true (face up)
+  return `
+    <div class="card ${flipped ? "flipped" : ""} ${options.dealIn ? "deal-in" : ""}">
+      <div class="card-face card-back"></div>
+      <div class="card-face card-front ${colorClass}">
+        <div class="corner tl"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
+        ${centerHTML(card)}
+        <div class="corner br"><div class="rank">${card.label}</div><div class="suit-mini">${card.suit.sym}</div></div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== Connection =====
+function connect(name, room) {
+  myInfo.name = name; myInfo.room = room;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ name })); } catch {}
+
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&name=${encodeURIComponent(name)}`;
+  ws = new WebSocket(url);
+  ws.addEventListener("open", () => {
+    showScreen("lobby");
+    $("roomCodeDisplay").textContent = room;
+  });
+  ws.addEventListener("message", (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    if (msg.type === "state") {
+      serverState = msg.state;
+      onStateUpdate();
+    }
+  });
+  ws.addEventListener("close", (e) => {
+    cleanupTimers();
+    if (e.code === 1006 || e.code === 1011) {
+      showToast("接続が切れました");
+    } else if (e.code === 4030 || e.code === 4023) {
+      showToast("ルームに入れませんでした");
+    }
+    showScreen("enter");
+    ws = null;
+  });
+  ws.addEventListener("error", () => {
+    showToast("接続エラー");
+  });
+}
+
+function send(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function disconnect() {
+  if (ws) { try { ws.close(); } catch {} ws = null; }
+  cleanupTimers();
+  showScreen("enter");
+}
+
+// ===== State handler =====
+function onStateUpdate() {
+  if (!serverState) return;
+  const phase = serverState.phase;
+  switch (phase) {
+    case PHASES.LOBBY: renderLobby(); break;
+    case PHASES.COUNTDOWN: renderCountdown(); break;
+    case PHASES.OBSERVATION: renderObservation(); break;
+    case PHASES.DECISION: renderDecision(); break;
+    case PHASES.REVEAL: renderReveal(); break;
+  }
+}
+
+// ===== Lobby =====
+function renderLobby() {
+  showScreen("lobby");
+  cleanupTimers();
+  const players = serverState.players || [];
+  $("playerCountLabel").textContent = `(${players.length}/8)`;
+  $("lobbyPlayerList").innerHTML = players.map(p => `
+    <div class="player-row ${p.isYou ? "you" : ""} ${p.id === serverState.hostId ? "host" : ""}">
+      <span class="name">${escapeHtml(p.name)}${p.isYou ? " (あなた)" : ""}</span>
+      <span class="badge">${p.id === serverState.hostId ? "HOST" : ""}${p.drinkCount > 0 ? " · " + p.drinkCount + "杯" : ""}</span>
+    </div>
+  `).join("");
+
+  const isHost = serverState.you === serverState.hostId;
+  const startBtn = $("startBtn");
+  const status = $("lobbyStatus");
+  if (isHost) {
+    startBtn.style.display = "";
+    if (players.length < 2) {
+      startBtn.disabled = true;
+      status.textContent = "もう1人以上の参加を待っています";
+    } else {
+      startBtn.disabled = false;
+      status.textContent = "全員揃ったらSTART";
+    }
+  } else {
+    startBtn.style.display = "none";
+    status.textContent = "ホストの開始を待っています";
+  }
+}
+
+// ===== Countdown =====
+function renderCountdown() {
+  showScreen("countdown");
+  cleanupTimers();
+  const update = () => {
+    const remain = Math.max(0, Math.ceil((serverState.phaseEndAt - Date.now()) / 1000));
+    $("countdownNumber").textContent = remain;
+  };
+  update();
+  timerInterval = setInterval(update, 200);
+}
+
+// ===== Observation =====
+function renderObservation() {
+  showScreen("observation");
+  cleanupTimers();
+  const bigCard = $("bigCardWrap");
+  if (serverState.myCard) {
+    bigCard.innerHTML = cardHTML(serverState.myCard, { flipped: true, dealIn: true });
+  } else {
+    bigCard.innerHTML = "";
+  }
+  const update = () => {
+    const remain = Math.max(0, Math.ceil((serverState.phaseEndAt - Date.now()) / 1000));
+    $("observationTimer").textContent = `${remain} 秒`;
+  };
+  update();
+  timerInterval = setInterval(update, 250);
+}
+
+// ===== Decision =====
+function renderDecision() {
+  showScreen("decision");
+  cleanupTimers();
+  const me = (serverState.players || []).find(p => p.isYou);
+  const decided = me && me.decided;
+  $("decisionButtons").style.display = decided ? "none" : "";
+  $("decisionLocked").style.display = decided ? "" : "none";
+  const totalPlayers = serverState.players.length;
+  const decidedCount = serverState.players.filter(p => p.decided).length;
+  $("decisionStatus").textContent = `決定: ${decidedCount} / ${totalPlayers} 人`;
+}
+
+// ===== Reveal =====
+function renderReveal() {
+  showScreen("reveal");
+  cleanupTimers();
+  const result = serverState.result;
+  const players = serverState.players;
+
+  // Winner banner
+  const winners = (result?.winners || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+  $("winnerName").textContent = winners.length === 0 ? "全員フォールド" : winners.map(w => w.name).join(" & ");
+
+  // Grid
+  const winnerSet = new Set(result?.winners || []);
+  $("revealGrid").innerHTML = players.map(p => {
+    const drinks = result?.drinks?.[p.id] || 0;
+    const isWinner = winnerSet.has(p.id);
+    const isLoser = drinks > 0;
+    let classes = "reveal-card";
+    if (isWinner) classes += " winner";
+    else if (isLoser) classes += " loser";
+    return `
+      <div class="${classes}">
+        <div class="pname ${p.isYou ? "you" : ""}">${escapeHtml(p.name)}</div>
+        <div class="pcard-wrap">${cardHTML(p.card, { flipped: true })}</div>
+        <span class="pdecision ${p.decision || ""}">${p.decision === "fight" ? "勝負" : p.decision === "fold" ? "フォールド" : "-"}</span>
+        <div class="pdrinks ${drinks >= 2 ? "heavy" : ""}">${drinks > 0 ? `${drinks} 杯` : "セーフ"}</div>
+      </div>
+    `;
+  }).join("");
+
+  const isHost = serverState.you === serverState.hostId;
+  $("nextBtn").style.display = isHost ? "" : "none";
+}
+
+function cleanupTimers() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+// ===== Event listeners =====
+$("enterBtn").addEventListener("click", () => {
+  const name = $("nameInput").value.trim();
+  let room = $("roomInput").value.trim().toUpperCase();
+  if (!name) { showToast("名前を入力してください"); return; }
+  if (!room) {
+    // Generate new room code
+    room = Array.from({length: 5}, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
+  } else if (!/^[A-Z0-9]{4,6}$/.test(room)) {
+    showToast("ルームコードは4〜6文字の英数字");
+    return;
+  }
+  connect(name, room);
+});
+
+$("startBtn").addEventListener("click", () => send({ type: "start" }));
+$("nextBtn").addEventListener("click", () => send({ type: "next" }));
+$("leaveBtn").addEventListener("click", disconnect);
+$("leaveBtn2").addEventListener("click", disconnect);
+
+document.querySelectorAll("#decisionButtons button").forEach(b => {
+  b.addEventListener("click", () => send({ type: "decision", choice: b.dataset.choice }));
+});
+
+// Prevent zoom
+document.addEventListener("gesturestart", e => e.preventDefault());
+</script>
+</body>
+</html>

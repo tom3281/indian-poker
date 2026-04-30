@@ -1,0 +1,19 @@
+name = "indian-poker"
+main = "src/worker.js"
+compatibility_date = "2025-04-01"
+
+# Static asset bundling (the public/ folder is served as-is at the root path)
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Durable Object: one instance per game room
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoom"
+
+# DO migration (SQLite-backed; required first migration entry)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
