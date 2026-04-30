@@ -194,9 +194,22 @@
     border-color: #ffd76e;
     box-shadow: 0 0 16px rgba(255,215,110,0.3);
   }
-  .reveal-card.loser { background: rgba(255,80,80,0.12); border-color: rgba(255,80,80,0.45); }
+  .reveal-card.loser {
+    background: linear-gradient(180deg, rgba(255,40,60,0.28) 0%, rgba(255,40,60,0.08) 100%);
+    border-color: #ff5e6e;
+    box-shadow: 0 0 24px rgba(255,40,60,0.45), inset 0 0 18px rgba(255,40,60,0.12);
+    animation: loserPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes loserPulse {
+    0%, 100% { box-shadow: 0 0 22px rgba(255,40,60,0.4), inset 0 0 14px rgba(255,40,60,0.1); }
+    50%      { box-shadow: 0 0 38px rgba(255,40,60,0.7), inset 0 0 22px rgba(255,40,60,0.22); }
+  }
   .reveal-card .pname { font-size: 13px; font-weight: 700; }
   .reveal-card .pname.you { color: #ffd76e; }
+  .reveal-card.loser .pname {
+    color: #fff; font-size: 15px; font-weight: 900;
+    text-shadow: 0 0 12px rgba(255,80,100,0.7);
+  }
   .reveal-card .pcard-wrap { width: 70px; aspect-ratio: 5 / 7; }
   .reveal-card .pdecision {
     font-size: 11px; padding: 3px 9px; border-radius: 999px;
@@ -206,8 +219,53 @@
   .reveal-card .pdecision.fold { background: rgba(150,150,150,0.25); color: rgba(255,255,255,0.7); }
   .reveal-card .pdrinks {
     font-size: 12px; color: rgba(255,255,255,0.7);
+    padding: 3px 10px; border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    letter-spacing: 1px;
   }
-  .reveal-card .pdrinks.heavy { color: #ff8a8a; font-weight: 700; }
+  .reveal-card.loser .pdrinks {
+    font-size: 17px; font-weight: 900; color: #fff;
+    background: linear-gradient(180deg, #ff5e6e 0%, #c41020 100%);
+    padding: 6px 14px; border-radius: 10px;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 14px rgba(255,40,60,0.55), inset 0 1px 0 rgba(255,255,255,0.3);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    animation: drinkBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .reveal-card.loser .pdrinks::before { content: "🍺 "; }
+  @keyframes drinkBounce {
+    0%   { transform: scale(0); opacity: 0; }
+    60%  { transform: scale(1.18); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* DRINK banner */
+  .drink-banner {
+    text-align: center; padding: 14px 14px 16px;
+    background: linear-gradient(90deg, transparent, rgba(255,40,60,0.18), transparent);
+    border-top: 1px solid rgba(255,40,60,0.4);
+    border-bottom: 1px solid rgba(255,40,60,0.4);
+    margin: 0 -20px 14px;
+  }
+  .drink-banner .label {
+    font-size: 10px; letter-spacing: 4px;
+    color: rgba(255,255,255,0.7);
+  }
+  .drink-banner .drinker-list {
+    font-size: 22px; font-weight: 900;
+    color: #ff5e6e;
+    margin-top: 4px; letter-spacing: 2px;
+    text-shadow: 0 0 16px rgba(255,40,60,0.6);
+    line-height: 1.3;
+    word-break: keep-all;
+  }
+  .drink-banner .drinker-list .cup {
+    font-size: 14px; font-weight: 700;
+    color: #fff;
+    margin-left: 4px;
+    letter-spacing: 1px;
+  }
+  .drink-banner.empty { display: none; }
   .verdict-banner {
     text-align: center; padding: 14px;
     background: linear-gradient(90deg, transparent, rgba(255,215,110,0.15), transparent);
@@ -502,6 +560,10 @@
       <div class="label">WINNER</div>
       <div class="winner-name" id="winnerName">-</div>
     </div>
+    <div class="drink-banner" id="drinkBanner">
+      <div class="label">DRINK</div>
+      <div class="drinker-list" id="drinkerList">-</div>
+    </div>
     <div class="reveal-grid" id="revealGrid"></div>
     <div class="footer-actions">
       <button class="btn btn-primary" id="nextBtn" style="display:none">NEXT ROUND</button>
@@ -786,6 +848,21 @@ function renderReveal() {
   // Winner banner
   const winners = (result?.winners || []).map(id => players.find(p => p.id === id)).filter(Boolean);
   $("winnerName").textContent = winners.length === 0 ? "全員フォールド" : winners.map(w => w.name).join(" & ");
+
+  // Drinker banner
+  const drinkers = players
+    .map(p => ({ p, n: result?.drinks?.[p.id] || 0 }))
+    .filter(x => x.n > 0);
+  const drinkBanner = $("drinkBanner");
+  if (drinkers.length === 0) {
+    drinkBanner.classList.add("empty");
+    $("drinkerList").innerHTML = "";
+  } else {
+    drinkBanner.classList.remove("empty");
+    $("drinkerList").innerHTML = drinkers
+      .map(({ p, n }) => `${escapeHtml(p.name)}<span class="cup">${n}杯</span>`)
+      .join(" / ");
+  }
 
   // Grid
   const winnerSet = new Set(result?.winners || []);
