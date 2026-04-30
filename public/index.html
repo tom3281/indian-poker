@@ -331,6 +331,101 @@
     opacity: 0; pointer-events: none; transition: opacity .25s;
   }
   .toast.show { opacity: 1; }
+
+  /* Rules link / overlay */
+  .rules-link {
+    margin-top: 12px;
+    background: transparent; border: none;
+    color: rgba(255,215,110,0.75);
+    font-family: inherit; font-size: 13px;
+    letter-spacing: 2px;
+    cursor: pointer; padding: 8px;
+    text-decoration: underline; text-underline-offset: 4px;
+  }
+  .rules-link:active { opacity: 0.6; }
+  .rules-overlay {
+    position: fixed; inset: 0; z-index: 1100;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.85);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s;
+    padding: 20px;
+  }
+  .rules-overlay.show { opacity: 1; pointer-events: auto; }
+  .rules-card {
+    background: linear-gradient(180deg, #1a233d 0%, #0f1730 100%);
+    border: 1px solid rgba(255,215,110,0.35);
+    border-radius: 18px;
+    padding: 24px 22px 18px;
+    max-width: 440px; width: 100%;
+    max-height: 85dvh; overflow-y: auto;
+    color: #fff;
+    transform: scale(0.92) translateY(8px);
+    transition: transform .3s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 32px rgba(255,215,110,0.15);
+  }
+  .rules-overlay.show .rules-card { transform: scale(1) translateY(0); }
+  .rules-title {
+    font-size: 13px; letter-spacing: 5px;
+    color: #ffd76e; text-align: center;
+    margin: 0 0 18px; font-weight: 700;
+  }
+  .rules-section { margin-bottom: 18px; }
+  .rules-section h4 {
+    font-size: 11px; letter-spacing: 3px;
+    color: #ffd76e; margin: 0 0 8px;
+    font-weight: 600; opacity: 0.85;
+  }
+  .rules-section ol {
+    padding-left: 22px; margin: 0;
+    font-size: 13px; line-height: 1.65;
+  }
+  .rules-section ol li { margin-bottom: 6px; }
+  .rules-section .penalty-list {
+    list-style: none; padding: 0; margin: 0;
+    font-size: 13px; line-height: 1.5;
+  }
+  .rules-section .penalty-list li {
+    padding: 8px 12px; margin-bottom: 6px;
+    background: rgba(0,0,0,0.3);
+    border-left: 3px solid;
+    border-radius: 6px;
+  }
+  .rules-section .penalty-list .win    { border-color: #4eff96; }
+  .rules-section .penalty-list .lose   { border-color: #ff5e6e; }
+  .rules-section .penalty-list .fold   { border-color: #8a8a92; }
+  .rules-section .penalty-list .allfold { border-color: #ffd76e; }
+  .rules-section .penalty-list b {
+    color: #ffd76e; letter-spacing: 1px; margin-right: 6px;
+  }
+  .rules-strength {
+    background: rgba(255,215,110,0.08);
+    border: 1px solid rgba(255,215,110,0.2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px; letter-spacing: 2px;
+    text-align: center;
+    font-weight: 600;
+  }
+  .rules-strength .strong  { color: #ff5e6e; }
+  .rules-strength .weak    { color: #8a8a92; }
+  .rules-close {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 10px;
+    color: #fff; font-family: inherit;
+    font-size: 14px; letter-spacing: 4px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .rules-close:active {
+    background: rgba(255,255,255,0.06);
+    transform: translateY(1px);
+  }
 </style>
 </head>
 <body>
@@ -351,6 +446,7 @@
       <input id="roomInput" type="text" placeholder="既存ルームのコードを入力（空なら新規作成）" maxlength="6" autocomplete="off" value="KK2022" style="text-transform:uppercase;letter-spacing:2px;">
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
+    <button class="rules-link" id="rulesBtn">ルールを見る</button>
   </div>
 
   <!-- ===== LOBBY ===== -->
@@ -416,6 +512,42 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="rules-overlay" id="rulesOverlay">
+  <div class="rules-card">
+    <h3 class="rules-title">RULES · 遊び方</h3>
+
+    <div class="rules-section">
+      <h4>進行</h4>
+      <ol>
+        <li>名前と同じルームコードで全員 <b>JOIN</b></li>
+        <li>カウントダウン中に <strong>スマホを額に当てる</strong>（画面を外向き、自分のカードは見ない）</li>
+        <li>60秒で他の人のカードを観察、自分のカードの強さを推測</li>
+        <li>スマホを下ろして <strong>「勝負」or「フォールド」</strong> を選ぶ</li>
+        <li>全員のカードが公開、結果に応じて飲む</li>
+      </ol>
+    </div>
+
+    <div class="rules-section">
+      <h4>罰ゲーム</h4>
+      <ul class="penalty-list">
+        <li class="win"><b>勝負して勝ち（最強）</b>飲まない</li>
+        <li class="lose"><b>勝負して負け（最弱）</b>勝負した人数ぶん飲む</li>
+        <li class="fold"><b>フォールド</b>1杯</li>
+        <li class="allfold"><b>全員フォールド</b>全員1杯</li>
+      </ul>
+    </div>
+
+    <div class="rules-section">
+      <h4>カードの強さ</h4>
+      <div class="rules-strength">
+        <span class="weak">2</span> &lt; 3 &lt; … &lt; 10 &lt; J &lt; Q &lt; K &lt; <span class="strong">A</span>
+      </div>
+    </div>
+
+    <button class="rules-close" id="rulesCloseBtn">CLOSE</button>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -682,6 +814,13 @@ function cleanupTimers() {
 }
 
 // ===== Event listeners =====
+const rulesOverlay = $("rulesOverlay");
+$("rulesBtn").addEventListener("click", () => rulesOverlay.classList.add("show"));
+$("rulesCloseBtn").addEventListener("click", () => rulesOverlay.classList.remove("show"));
+rulesOverlay.addEventListener("click", (e) => {
+  if (e.target === rulesOverlay) rulesOverlay.classList.remove("show");
+});
+
 $("enterBtn").addEventListener("click", () => {
   const name = $("nameInput").value.trim();
   let room = $("roomInput").value.trim().toUpperCase();
