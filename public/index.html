@@ -625,6 +625,24 @@ let ws = null;
 let serverState = null;
 let myInfo = { name: "", room: "" };
 let timerInterval = null;
+let manualClose = false;       // user pressed 退出 — don't auto-reconnect
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+
+// Stable per-browser-profile id. Same id across tabs in the same browser
+// profile, so two tabs can't double-occupy a seat.
+function getOrCreateClientId() {
+  const KEY = "indian_clientId_v1";
+  let id = "";
+  try { id = localStorage.getItem(KEY) || ""; } catch {}
+  if (!/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+    id = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+      : Array.from({length: 32}, () => "0123456789abcdef"[Math.floor(Math.random()*16)]).join("");
+    try { localStorage.setItem(KEY, id); } catch {}
+  }
+  return id;
+}
+const CLIENT_ID = getOrCreateClientId();
 
 // Pre-fill name: saved name first, otherwise random funny default
 const FUNNY_NAMES = [
@@ -708,11 +726,24 @@ function cardHTML(card, options = {}) {
 function connect(name, room) {
   myInfo.name = name; myInfo.room = room;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ name })); } catch {}
+  manualClose = false;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
 
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const url = `${proto}://${location.host}/ws?room=${encodeURIComponent(room)}&name=${encodeURIComponent(name)}`;
+  const url = `${proto}://${location.host}/ws`
+    + `?room=${encodeURIComponent(room)}`
+    + `&name=${encodeURIComponent(name)}`
+    + `&clientId=${encodeURIComponent(CLIENT_ID)}`;
+
+  // Tear down any previous socket without triggering its close handler.
+  if (ws) {
+    try { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; } catch {}
+    try { ws.close(); } catch {}
+  }
+
   ws = new WebSocket(url);
   ws.addEventListener("open", () => {
+    reconnectAttempts = 0;
     showScreen("lobby");
     $("roomCodeDisplay").textContent = room;
   });
@@ -726,16 +757,35 @@ function connect(name, room) {
   });
   ws.addEventListener("close", (e) => {
     cleanupTimers();
-    if (e.code === 1006 || e.code === 1011) {
-      showToast("接続が切れました");
-    } else if (e.code === 4030 || e.code === 4023) {
-      showToast("ルームに入れませんでした");
-    }
-    showScreen("enter");
     ws = null;
+
+    // Codes that should NOT trigger reconnect:
+    //  4002 = replaced by another tab (you took over from somewhere else)
+    //  4023 = game in progress (joined too late and you're brand new)
+    //  4030 = room full
+    //  1003 = unsupported / bad request
+    if (manualClose || e.code === 4002 || e.code === 4023 || e.code === 4030 || e.code === 1003) {
+      if (e.code === 4002) showToast("別タブで開かれたため切断されました");
+      else if (e.code === 4030) showToast("ルームが満員です");
+      else if (e.code === 4023) showToast("対局中のため新規参加できません");
+      manualClose = false;
+      showScreen("enter");
+      return;
+    }
+
+    // Otherwise: try to reconnect (network blip, server restart, etc.)
+    reconnectAttempts++;
+    if (reconnectAttempts > 8) {
+      showToast("再接続できませんでした");
+      showScreen("enter");
+      return;
+    }
+    const delay = Math.min(4000, 400 * Math.pow(1.6, reconnectAttempts - 1));
+    showToast(`再接続中… (${reconnectAttempts})`, delay + 400);
+    reconnectTimer = setTimeout(() => connect(myInfo.name, myInfo.room), delay);
   });
   ws.addEventListener("error", () => {
-    showToast("接続エラー");
+    // Mostly redundant — close will fire next; just don't surface a noisy toast
   });
 }
 
@@ -746,7 +796,9 @@ function send(msg) {
 }
 
 function disconnect() {
-  if (ws) { try { ws.close(); } catch {} ws = null; }
+  manualClose = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (ws) { try { ws.close(1000, "user left"); } catch {} ws = null; }
   cleanupTimers();
   showScreen("enter");
 }

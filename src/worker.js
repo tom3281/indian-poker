@@ -9,6 +9,7 @@ const PHASES = {
 const COUNTDOWN_MS = 10_000;
 const OBSERVATION_MS = 30_000;
 const MAX_PLAYERS = 8;
+const GRACE_MS = 15_000; // keep a disconnected player around this long for reconnect
 
 const SUITS = [
   { sym: "♠", color: "black" },
@@ -69,35 +70,65 @@ export class GameRoom {
     }
     const url = new URL(request.url);
     const name = (url.searchParams.get("name") || "").trim().slice(0, 20);
+    const clientId = (url.searchParams.get("clientId") || "").trim();
     if (!name) return new Response("Missing name", { status: 400 });
-    if (this.players.size >= MAX_PLAYERS && this.phase === PHASES.LOBBY) {
-      return new Response("Room full", { status: 403 });
+    if (!/^[A-Za-z0-9-]{8,64}$/.test(clientId)) {
+      return new Response("Missing or invalid clientId", { status: 400 });
     }
-    if (this.phase !== PHASES.LOBBY) {
-      return new Response("Game in progress", { status: 423 });
+
+    const existing = this.players.get(clientId);
+
+    if (existing) {
+      // Reconnect / takeover: close any prior WS for this clientId and reuse the seat
+      const prior = this.sessions.get(clientId);
+      if (prior) {
+        try { prior.ws.close(4002, "Replaced by new connection"); } catch {}
+        this.sessions.delete(clientId);
+      }
+      // Cancel any pending removal — they came back in time
+      if (existing.removeTimer) {
+        clearTimeout(existing.removeTimer);
+        existing.removeTimer = null;
+      }
+      // Keep their card / decision / drinkCount; just refresh display name
+      existing.name = name;
+    } else {
+      // Brand-new participant — apply join restrictions
+      if (this.players.size >= MAX_PLAYERS && this.phase === PHASES.LOBBY) {
+        return new Response("Room full", { status: 403 });
+      }
+      if (this.phase !== PHASES.LOBBY) {
+        return new Response("Game in progress", { status: 423 });
+      }
+      this.players.set(clientId, {
+        name,
+        card: null,
+        decision: null,
+        drinkCount: 0,
+        removeTimer: null,
+      });
+      if (!this.hostId) this.hostId = clientId;
     }
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
 
-    const playerId = crypto.randomUUID();
-    const sessionId = playerId;
-    this.sessions.set(sessionId, { ws: server, playerId });
-    this.players.set(playerId, {
-      name,
-      card: null,
-      decision: null,
-      drinkCount: 0,
-    });
-    if (!this.hostId) this.hostId = playerId;
+    this.sessions.set(clientId, { ws: server, playerId: clientId });
 
     server.addEventListener("message", async (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
-      await this.handleMessage(playerId, msg);
+      await this.handleMessage(clientId, msg);
     });
-    const onClose = () => this.handleDisconnect(sessionId);
+    const onClose = () => {
+      // Only treat this as a disconnect if THIS WS is still the active session
+      // for the clientId. If a new tab took over, this stale close is a no-op.
+      const sess = this.sessions.get(clientId);
+      if (sess && sess.ws === server) {
+        this.handleDisconnect(clientId);
+      }
+    };
     server.addEventListener("close", onClose);
     server.addEventListener("error", onClose);
 
@@ -133,12 +164,31 @@ export class GameRoom {
     }
   }
 
-  handleDisconnect(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    this.sessions.delete(sessionId);
-    this.players.delete(session.playerId);
-    if (this.hostId === session.playerId) {
+  handleDisconnect(clientId) {
+    // Drop the WebSocket immediately, but keep the player record so they can
+    // reconnect within the grace window without losing their seat.
+    this.sessions.delete(clientId);
+    const player = this.players.get(clientId);
+    if (!player) return;
+
+    if (player.removeTimer) clearTimeout(player.removeTimer);
+    player.removeTimer = setTimeout(() => this.finalizeRemoval(clientId), GRACE_MS);
+    this.broadcast();
+  }
+
+  finalizeRemoval(clientId) {
+    const player = this.players.get(clientId);
+    if (!player) return;
+    // If they reconnected during the grace period, bail out
+    if (this.sessions.has(clientId)) {
+      if (player.removeTimer) {
+        clearTimeout(player.removeTimer);
+        player.removeTimer = null;
+      }
+      return;
+    }
+    this.players.delete(clientId);
+    if (this.hostId === clientId) {
       this.hostId = this.players.keys().next().value || null;
     }
     if (this.players.size < 2 && this.phase !== PHASES.LOBBY) {
@@ -152,7 +202,7 @@ export class GameRoom {
       return;
     }
     // If we were waiting on this player to decide, check completion
-    if (this.phase === PHASES.DECISION && this.players.size > 0
+    if (this.phase === PHASES.DECISION
         && [...this.players.values()].every(pl => pl.decision)) {
       this.endDecision();
       return;
