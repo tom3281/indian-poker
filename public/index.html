@@ -512,7 +512,7 @@
     </div>
     <div class="panel">
       <h2>ルームコード</h2>
-      <input id="roomInput" type="text" placeholder="既存ルームのコードを入力（空なら新規作成）" maxlength="6" autocomplete="off" value="KK2022" style="text-transform:uppercase;letter-spacing:2px;">
+      <input id="roomInput" type="text" placeholder="既存ルームのコードを入力（既定値は新規ルーム）" maxlength="6" autocomplete="off" style="text-transform:uppercase;letter-spacing:2px;">
     </div>
     <button class="btn btn-primary" id="enterBtn">JOIN</button>
     <button class="rules-link" id="rulesBtn">ルールを見る</button>
@@ -721,12 +721,20 @@ const FUNNY_NAMES = [
 function randomFunnyName() {
   return FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)];
 }
+// Room code: 5-char A-Z/2-9, no 0/1/I/L/O so visually unambiguous when shared.
+function randomRoomCode() {
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 5 }, () => A[Math.floor(Math.random() * A.length)]).join("");
+}
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
   document.getElementById("nameInput").value = saved.name || randomFunnyName();
 } catch {
   document.getElementById("nameInput").value = randomFunnyName();
 }
+// Pre-fill room code with a fresh random per visit. The user can clear it
+// to type someone else's code instead.
+document.getElementById("roomInput").value = randomRoomCode();
 
 // ===== DOM helpers =====
 function $(id) { return document.getElementById(id); }
