@@ -484,6 +484,17 @@
     background: rgba(255,255,255,0.06);
     transform: translateY(1px);
   }
+
+  /* Version tag — fixed bottom-right so it's visible on every screen */
+  .version-tag {
+    position: fixed;
+    bottom: 6px; right: 8px;
+    font-family: 'Inter', system-ui, monospace;
+    font-size: 10px; letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+    pointer-events: none;
+    z-index: 50;
+  }
 </style>
 </head>
 <body>
@@ -573,6 +584,7 @@
 
 </div>
 
+<div class="version-tag" id="versionTag"></div>
 <div class="toast" id="toast"></div>
 
 <div class="rules-overlay" id="rulesOverlay">
@@ -615,12 +627,19 @@
 <script>
 "use strict";
 
+// ===== Version =====
+// Bump this when shipping. Shown bottom-right on every screen so you can
+// verify which build is actually live after a deploy / cache refresh.
+const APP_VERSION = "v0.3.0";
+document.getElementById("versionTag").textContent = APP_VERSION;
+
 // ===== State =====
 const PHASES = {
   LOBBY: "lobby", COUNTDOWN: "countdown", OBSERVATION: "observation",
   DECISION: "decision", REVEAL: "reveal",
 };
 const STORAGE_KEY = "indian_v1";
+const MAX_RECONNECT = 8;
 let ws = null;
 let serverState = null;
 let myInfo = { name: "", room: "" };
@@ -628,6 +647,56 @@ let timerInterval = null;
 let manualClose = false;       // user pressed 退出 — don't auto-reconnect
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+// Decision messages are stashed here when the user clicks while the socket
+// isn't OPEN (mid-reconnect). Flushed on next open so a click during a brief
+// blip isn't lost.
+let pendingDecision = null;
+// Heartbeat — detects "silent dead" sockets where the browser still reports
+// readyState === OPEN but no traffic actually flows. If we don't see ANY
+// message from the server within HEARTBEAT_TIMEOUT_MS, force a reconnect.
+let heartbeatTimer = null;
+let lastServerMessageAt = 0;
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_TIMEOUT_MS = 20_000;
+
+// Screen Wake Lock — keep the display on during a session. Auto-released
+// when the tab is hidden; we re-acquire on visibilitychange.
+let wakeLock = null;
+async function requestWakeLock() {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => { wakeLock = null; });
+  } catch {
+    /* user denied or browser blocked — silent */
+  }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (!wakeLock && ws) requestWakeLock();
+  // iOS/Android often kill background WebSockets without firing close on
+  // resume. If we have an active session but the socket is in a non-OPEN
+  // state, kick off a reconnect.
+  if (myInfo.room && myInfo.name && !manualClose) {
+    if (!ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      forceReconnect("resume");
+    }
+  }
+});
+
+function forceReconnect(reason) {
+  if (manualClose) return;
+  if (reconnectTimer) return; // a reconnect is already scheduled
+  if (ws) {
+    const old = ws;
+    ws = null;
+    try { old.close(4001, reason || "forced"); } catch {}
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect(myInfo.name, myInfo.room);
+  }, 200);
+}
 
 // Stable per-browser-profile id. Same id across tabs in the same browser
 // profile, so two tabs can't double-occupy a seat.
@@ -735,70 +804,144 @@ function connect(name, room) {
     + `&name=${encodeURIComponent(name)}`
     + `&clientId=${encodeURIComponent(CLIENT_ID)}`;
 
-  // Tear down any previous socket without triggering its close handler.
-  if (ws) {
-    try { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; } catch {}
-    try { ws.close(); } catch {}
-  }
+  // Capture this socket locally — handlers reference `sock`, not the global
+  // `ws`, so a late close event from a stale socket can't clobber a newer one.
+  const sock = new WebSocket(url);
+  ws = sock;
 
-  ws = new WebSocket(url);
-  ws.addEventListener("open", () => {
+  sock.addEventListener("open", () => {
+    if (ws !== sock) return; // already replaced — ignore
     reconnectAttempts = 0;
-    showScreen("lobby");
+    lastServerMessageAt = Date.now();
+    startHeartbeat();
+    requestWakeLock();
     $("roomCodeDisplay").textContent = room;
+    // Flush any decision the user clicked while we were disconnected.
+    if (pendingDecision) {
+      const choice = pendingDecision;
+      pendingDecision = null;
+      try { sock.send(JSON.stringify({ type: "decision", choice })); } catch {}
+    }
+    // Ask server for fresh state — covers any race where the initial
+    // broadcast in fetch() was missed for any reason.
+    try { sock.send(JSON.stringify({ type: "hello" })); } catch {}
   });
-  ws.addEventListener("message", (e) => {
+
+  sock.addEventListener("message", (e) => {
+    if (ws !== sock) return;
+    lastServerMessageAt = Date.now();
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
     if (msg.type === "state") {
       serverState = msg.state;
       onStateUpdate();
     }
+    // pong is implicit: any incoming message updates lastServerMessageAt
   });
-  ws.addEventListener("close", (e) => {
-    cleanupTimers();
-    ws = null;
 
-    // Codes that should NOT trigger reconnect:
-    //  4002 = replaced by another tab (you took over from somewhere else)
-    //  4023 = game in progress (joined too late and you're brand new)
-    //  4030 = room full
-    //  1003 = unsupported / bad request
-    if (manualClose || e.code === 4002 || e.code === 4023 || e.code === 4030 || e.code === 1003) {
-      if (e.code === 4002) showToast("別タブで開かれたため切断されました");
-      else if (e.code === 4030) showToast("ルームが満員です");
-      else if (e.code === 4023) showToast("対局中のため新規参加できません");
-      manualClose = false;
-      showScreen("enter");
-      return;
+  sock.addEventListener("close", (e) => {
+    // Only mutate global state if THIS socket is still the current one — a
+    // stale close (e.g. arriving after a fast reconnect already replaced ws)
+    // must not clobber a healthy newer socket.
+    const isCurrent = ws === sock;
+    if (isCurrent) {
+      cleanupTimers();
+      stopHeartbeat();
+      ws = null;
     }
 
-    // Otherwise: try to reconnect (network blip, server restart, etc.)
-    reconnectAttempts++;
-    if (reconnectAttempts > 8) {
+    // Replaced by another tab on the same device — don't reconnect
+    if (e.code === 4002) {
+      if (isCurrent) {
+        manualClose = true;
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showToast("別のタブで開かれました");
+        showScreen("enter");
+      }
+      return;
+    }
+    // Hard rejections — server said no (room full / game in progress / bad input)
+    if (e.code === 4030 || e.code === 4023 || e.code === 1008 || e.code === 1003) {
+      if (isCurrent) {
+        manualClose = true;
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showToast(e.code === 4030 ? "ルームが満員です"
+          : e.code === 4023 ? "対局中のため新規参加できません"
+          : "ルームに入れませんでした");
+        showScreen("enter");
+      }
+      return;
+    }
+    // User-initiated close
+    if (manualClose) {
+      if (isCurrent) {
+        reconnectAttempts = 0;
+        pendingDecision = null;
+        showScreen("enter");
+      }
+      return;
+    }
+    // Auto-reconnect (network blip, server restart) — server preserves the
+    // seat for ~15s on disconnect, so the player picks up where they were.
+    if (isCurrent && myInfo.room && myInfo.name && reconnectAttempts < MAX_RECONNECT) {
+      reconnectAttempts++;
+      const backoff = Math.min(4000, 500 * Math.pow(1.6, reconnectAttempts - 1));
+      showToast(`再接続中… (${reconnectAttempts}/${MAX_RECONNECT})`, backoff + 400);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect(myInfo.name, myInfo.room);
+      }, backoff);
+      return;
+    }
+    if (isCurrent) {
       showToast("再接続できませんでした");
+      pendingDecision = null;
       showScreen("enter");
-      return;
+      reconnectAttempts = 0;
     }
-    const delay = Math.min(4000, 400 * Math.pow(1.6, reconnectAttempts - 1));
-    showToast(`再接続中… (${reconnectAttempts})`, delay + 400);
-    reconnectTimer = setTimeout(() => connect(myInfo.name, myInfo.room), delay);
   });
-  ws.addEventListener("error", () => {
-    // Mostly redundant — close will fire next; just don't surface a noisy toast
+
+  sock.addEventListener("error", () => {
+    // close handler will fire next — let it decide whether to reconnect
   });
 }
 
 function send(msg) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg));
+    return true;
   }
+  return false;
+}
+
+// Periodically ping the server and verify a response arrived. If we don't
+// hear ANY message back for HEARTBEAT_TIMEOUT_MS, the socket is silently dead
+// even though readyState may still report OPEN — force a reconnect.
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    try { ws.send(JSON.stringify({ type: "ping" })); } catch {}
+    if (Date.now() - lastServerMessageAt > HEARTBEAT_TIMEOUT_MS) {
+      forceReconnect("heartbeat-timeout");
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+function stopHeartbeat() {
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
 }
 
 function disconnect() {
   manualClose = true;
+  reconnectAttempts = 0;
+  pendingDecision = null;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  stopHeartbeat();
   if (ws) { try { ws.close(1000, "user left"); } catch {} ws = null; }
+  if (wakeLock) { try { wakeLock.release(); } catch {} wakeLock = null; }
   cleanupTimers();
   showScreen("enter");
 }
@@ -971,7 +1114,15 @@ $("leaveBtn").addEventListener("click", disconnect);
 $("leaveBtn2").addEventListener("click", disconnect);
 
 document.querySelectorAll("#decisionButtons button").forEach(b => {
-  b.addEventListener("click", () => send({ type: "decision", choice: b.dataset.choice }));
+  b.addEventListener("click", () => {
+    const choice = b.dataset.choice;
+    // If the socket is mid-reconnect, stash the choice so the click isn't
+    // lost — connect()'s open handler flushes it on the next OPEN.
+    if (!send({ type: "decision", choice })) {
+      pendingDecision = choice;
+      showToast("再接続後に送信します");
+    }
+  });
 });
 
 // Prevent zoom
